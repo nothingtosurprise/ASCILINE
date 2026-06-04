@@ -36,7 +36,7 @@
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/ASCILINE.git
+git clone https://github.com/YusufB5/ASCILINE.git
 cd ASCILINE
 ```
 
