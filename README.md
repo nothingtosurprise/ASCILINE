@@ -22,7 +22,7 @@
 -   **Real-Time Pixel Streaming**: Replaces characters with colored blocks, approaching 360p video quality.
 -   **High Performance**: Uses **HTML5 Canvas** for rendering, optimized for cinematic 24-30 FPS playback. High-FPS sources are automatically decimated for stability.
 -   **Master Clock Sync**: The audio track acts as the absolute master clock, guaranteeing perfect A/V synchronization.
--   **Zero-Copy Binary Protocol**: Frames are streamed as raw binary (`Uint8Array`) directly to the canvas, saving bandwidth and CPU.
+-   **Low-Overhead Binary Protocol*: Frames are streamed as raw binary (`Uint8Array`) directly to the canvas, saving bandwidth and CPU.
 -   **Multiple Color Modes**: Supports everything from classic B&W to 16M color ultra-fidelity.
 -   **Flexible Video Management**: Supports JSON playlists (per-video mode & volume), 
       folder-based auto-queuing (filesystem order), single-file mode, and infinite loop 
