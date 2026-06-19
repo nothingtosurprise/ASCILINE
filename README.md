@@ -130,6 +130,25 @@ Use `playlist.json` when you need different `--mode` or `--vol` settings for eac
 
 Open `http://localhost:8000` in your browser.
 
+### Player Controls
+
+Once a video is playing, the page has a full control bar under it:
+
+* Play and pause with the button, by clicking the video, or with the space bar.
+* Skip back and forward ten seconds with the `«10` and `10»` buttons.
+* Drag the seek bar to jump anywhere. The filled part shows how far along you are.
+* Hover over the seek bar and a small picture of that moment pops up, so you can
+  find the spot you want before you let go.
+* A volume slider on the right.
+
+The bar wraps and the whole player scales down so it still works on small screens
+and phones.
+
+The hover previews come from a light preview sprite. The server builds it once per
+video the first time you hover, in a single quick ffmpeg pass, and keeps it in
+memory so nothing is written to disk. If you already have your own sprite, point
+the `/scrub` route at it instead.
+
 ### 4. Run directly in Terminal (Standalone)
 If you prefer to bypass the web interface, you can render the video directly inside an ANSI-supported terminal (zero-flicker, true color):
 ```bash
