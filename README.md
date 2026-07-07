@@ -106,7 +106,8 @@ pip install yt-dlp
 ```
 Only needed if you pass a URL instead of a local file. Local playback works
 without it. URL playback also uses FFmpeg (see below) to normalize downloads.
-### 🔈 Audio Support (FFmpeg Required)
+
+### 🔈 Audio & Thumbnails Support (FFmpeg & FFprobe Required)
 To enable server-side audio processing (Volume 1-5), you must have FFmpeg installed.
 
 **Option 1: Package Manager (Recommended)**
@@ -117,8 +118,8 @@ To enable server-side audio processing (Volume 1-5), you must have FFmpeg instal
 **Option 2: Manual Installation (Windows)**
 If you get a `FileNotFoundError` or don't want to modify system variables:
 1. Download [FFmpeg ZIP](https://github.com/BtbN/FFmpeg-Builds/releases/latest).
-2. Extract `ffmpeg.exe` from the `bin` folder.
-3. Drop it directly into your `ASCILINE` project folder alongside `stream_server.py`.
+2. Extract **both** `ffmpeg.exe` and `ffprobe.exe` from the `bin` folder.
+3. Drop them directly into your `ASCILINE` project folder alongside `stream_server.py`.
 ### 3. Run the Web Server
 
 **Single video:**
@@ -170,13 +171,30 @@ Hover previews are built once per video on first hover, in a single ffmpeg pass,
 and kept in memory — nothing written to disk. Disable with `--no-thumbnails`.
 To use a prebuilt sprite instead, point the `/scrub` route at it.
 
+### Live Webcam Streaming
+Stream directly from your local webcam with an automatic selfie-mirror view.
+```bash
+python stream_server.py --webcam --cols 240
+
+# Select a different camera device (e.g., 1) and set a target FPS
+python stream_server.py --webcam --webcam-device 1 --webcam-fps 60
+
+# Disable the automatic horizontal mirror effect
+python stream_server.py --webcam --no-mirror
+``` 
 ### 4. Run directly in Terminal (Standalone)
 If you prefer to bypass the web interface, you can render the video directly inside an ANSI-supported terminal (zero-flicker, true color):
 ```bash
 python ascii_video_player2.py video.mp4 --cols 100 --quality 0
+
+# To run your webcam directly in the terminal:
+python ascii_video_player2.py --webcam --cols 100
+
 ```
 
 > ⚠️ **Note:** Do not resize your terminal window during playback, as dynamic text wrapping will corrupt the ASCII layout.
+
+
 
 ## 🎨 Customization
 
@@ -190,6 +208,18 @@ Edit `style.css` to change the accent colors and typography using CSS variables:
     --bg-color: #050505;
 }
 ```
+### 🎛️ Real-Time Frontend Filters & Palettes (ascii mod)
+ASCILINE includes a real-time post-processing engine built directly into the web interface.
+Click the **⚙FX** button on the player controls (or press the **`F`** key) to open the interactive TUI-style filter overlay.
+**Available Adjustments:**
+- **Contrast & Brightness:** Fine-tune the visual balance.
+- **Gamma:** Recover details from dark or washed-out sources.
+- **Sharpen:** Apply an Unsharp Mask (Level 0-10) to crisp up the ASCII definitions.
+- **Invert:** Instantly invert all brightness values.
+- **Palettes:** Switch between character sets on the fly:
+  - `Default`: The full, detailed ASCII ramp.
+  - `Flat/Anime`: A shortened, minimalist ramp (great for animations).
+  - `Block`: Chunky, dense characters for a retro terminal feel.
 
 ### Rendering Modes
 The engine supports different fidelity levels via the `--mode` flag:
