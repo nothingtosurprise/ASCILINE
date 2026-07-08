@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASCILINE VOD Player</title>
+    <style>
+        body {
+            background-color: #050505;
+            color: #00ff41;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: monospace;
+        }
+        #ascii-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .hidden { display: none !important; }
+        
+        .overlay-box {
+            position: absolute; 
+            top: 50%; left: 50%; 
+            transform: translate(-50%, -50%); 
+            z-index: 10; 
+            background: rgba(5,5,5,0.95); 
+            padding: 30px; 
+            border: 1px solid #00ff41; 
+            text-align: center;
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.2);
+            min-width: 400px;
+        }
+        
+        button {
+            background: none; 
+            border: 1px solid #00ff41; 
+            color: #00ff41; 
+            padding: 10px 20px; 
+            cursor: pointer; 
+            font-family: monospace;
+            font-size: 16px;
+            transition: all 0.2s;
+        }
+        button:hover {
+            background: #00ff41;
+            color: #050505;
+        }
+        button:disabled {
+            border-color: #333;
+            color: #333;
+            cursor: not-allowed;
+            background: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="container-main" style="width: 100vw; height: 100vh; position: relative;">
+        <div class="ascii-player" style="width: 100%; height: 100%;">
+            <canvas class="ascii-canvas" style="width: 100%; height: 100%; display: block;"></canvas>
+        </div>
+        
+        <div id="status-overlay" class="overlay-box">
+            <h1 style="margin-top: 0; border-bottom: 1px solid #00ff41; padding-bottom: 10px;">ASCILINE VOD PLAYER</h1>
+            <div style="text-align: left; margin-bottom: 25px; line-height: 1.6;">
+                <p><strong>1. Compile a video:</strong><br><span style="color: #888;">python compiler.py input.mp4 --out demo</span></p>
+                <p><strong>2. Start local server:</strong><br><span style="color: #888;">python -m http.server 8080</span></p>
+                <p><strong>3. Edit <code>index.html</code></strong><br><span style="color: #888;">Change line 86 to point to your .ascf file.</span></p>
+            </div>
+            
+            <div id="controls-main" class="hidden">
+                <button id="play-main">PLAY VIDEO</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="codec.js"></script>
+    <script src="reader.js"></script>
+    <script>
+        // Initialize the player
+        const player = new AscilinePlayer(document.getElementById('container-main'), { 
+            fontSize: 10,
+            pixelMode: true
+        });
+
+        const playBtn = document.getElementById('play-main');
+        const overlay = document.getElementById('status-overlay');
+
+        playBtn.addEventListener('click', async () => {
+            playBtn.disabled = true;
+            playBtn.innerText = "LOADING...";
+            
+            try {
+                // Hide overlay immediately so the video is visible
+                overlay.style.display = 'none';
+                
+                // TODO: Change 'demo.ascf' to your actual compiled video file name
+                // Example: await player.play('demo.ascf', 'demo.mp3');
+                await player.play('bad_applepix.ascf'); 
+            } catch (err) {
+                overlay.innerHTML = `
+                    <h2 style="color: #ff3333; margin-top:0;">CONNECTION FAILED</h2>
+                    <p style="text-align: left;">Could not load the video file.</p>
+                    <p style="color: #ff3333; text-align: left; background: #111; padding: 10px; border-left: 3px solid #ff3333;">${err.message}</p>
+                    <p style="font-size: 14px; margin-top: 20px; color: #888;">Did you compile a video and update index.html?</p>
+                `;
+            }
+        });
+
+        // Setup canvas and reveal play button
+        document.getElementById('controls-main').classList.remove('hidden');
+    </script>
+</body>
+</html>
