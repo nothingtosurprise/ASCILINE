@@ -43,6 +43,7 @@ No autoplay restrictions. To the browser, it's just text on a canvas.
 2.  **Frontend (Vanilla JS)**: Receives binary frames via WebSockets, manages a jitter buffer, and renders to a Canvas grid.
 3.  **Communication**: Optimized WebSocket protocol with a custom `INIT` handshake for dynamic resolution/FPS adjustment.
 
+
 ## 🗜️ Adaptive Frame Codec (opt-in,valid for ASCI mod [2-5])
 
 The original binary protocol re-sends the full grid every frame. An opt-in
@@ -86,6 +87,32 @@ You can append the `--debug` flag when launching the server to see live bandwidt
 **LAN / Network Streaming:**
 To stream the video on your local network (Wi-Fi), use the `--host` flag:
 > python stream_server.py video.mp4 --host 0.0.0.0
+
+## ⚡ Zero-Dependency Static Web Player
+
+ASCILINE features a **standalone, zero-dependency static HTML player**. You can compile any video into our custom `.ascf` (ASCII Compressed Format) and host it *anywhere* (GitHub Pages, Vercel, Netlify) without needing a Python backend.
+
+> 💡 **Trade-off Notice:** Compiled `.ascf` files are naturally larger than standard `.mp4` files. However, this trade-off unlocks unprecedented possibilities: true DOM-level interaction, pixel-perfect text selection, and complete independence from browser video codecs.
+
+### Basic Workflow
+
+**1. Compile Your Video:**
+First, compile your standard video into the `.ascf` format using the static compiler:
+
+```bash
+python static_player/compiler.py your_video.mp4 --cols 250 --pixel --quantize 2 --hard
+```
+
+**Compiler-Specific Optimization Flags:**
+* `--quantize 0-3`: Drops color bits to drastically reduce file size (0=lossless, 1=slight, 2=medium, 3=aggressive).
+* `--tolerance`: Sets color drift tolerance to avoid updating pixels with invisible color changes.
+* `--hard`: Uses maximum zlib compression (level 9). Slower to compile, but results in a smaller output file.
+
+**2. Implement:**
+Place the generated `.ascf` file next to `static_player/index.html` and open it through any local web server to enjoy zero-latency playback!
+
+> ⚠️ **Best Practice:** We highly recommend compiling short clips (under 5-10 minutes). Because the `.ascf` format stores raw render instructions for the canvas, compiling full-length movies will result in massive file sizes that may exceed your browser's memory limits.
+
 
 ## 📦 Installation
 
@@ -289,6 +316,9 @@ If you find this project helpful, you can support me by donating crypto:
 ASCILINE is distributed under the MIT License, but with an anti ad strict ethical guardrail. 
 
 See the [LICENSE](LICENSE) file for the full text, which includes the **ANTI-ADVERTISEMENT RESTRICTION** clause.
+## Community
+
+**Discord:** Come hang out with us! Join the [Codequerors Discord Server](https://discord.gg/DzMpbZGkWV) to discuss creative coding, share ideas, or contribute to ASCILINE!
 
 ## 📬 Contact & Questions
 [asciline.engine@gmail.com](mailto:asciline.engine@gmail.com)
