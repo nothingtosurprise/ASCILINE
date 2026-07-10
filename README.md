@@ -100,7 +100,7 @@ ASCILINE features a **standalone, zero-dependency static HTML player**. You can 
 First, compile your standard video into the `.ascf` format using the static compiler:
 
 ```bash
-python static_player/compiler.py your_video.mp4 --cols 250 --pixel --quantize 2 --hard
+python static_player/compiler.py your_video.mp4 --cols 250 --pixel --quantize 2 
 ```
 
 **Compiler-Specific Optimization Flags:**
