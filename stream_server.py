@@ -100,7 +100,7 @@ async def prefetch_worker():
             loop_opt = getattr(app.state, "loop", False)
             
             if len(queue) > 0:
-               #download queque protect
+               # download queue guard
                 current_entry = queue[idx]
                 if ytdl.is_url(current_entry["video"]):
                     await asyncio.sleep(2)
@@ -120,7 +120,7 @@ async def prefetch_worker():
         except asyncio.CancelledError:
             break
         except Exception as e:
-            pass
+            print(f"[WARN] prefetch_worker error: {e}")
         await asyncio.sleep(2)
 
 @asynccontextmanager
