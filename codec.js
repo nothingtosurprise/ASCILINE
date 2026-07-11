@@ -9,6 +9,7 @@
  *   tag 0 RAW   : payload is the framebuffer bytes
  *   tag 1 ZLIB  : payload is zlib(framebuffer bytes)        -> 'deflate'
  *   tag 2 DELTA : payload is zlib(indices[uint32 LE] ++ changed values)
+ *   tag 3 RLE   : payload is zlib(runs: [uint16 count][cell bytes]...)
  *
  * Decoding MUST stay in arrival order (deltas patch the previous frame), so
  * callers feed messages through a sequential queue (see makeDecoder).
@@ -18,7 +19,7 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.AscilineCodec = api;
 })(typeof self !== 'undefined' ? self : this, function () {
-  const TAG_RAW = 0, TAG_ZLIB = 1, TAG_DELTA = 2;
+  const TAG_RAW = 0, TAG_ZLIB = 1, TAG_DELTA = 2, TAG_RLE_FULL = 3;
 
   async function inflate(bytes) {
     // Python zlib.compress -> RFC1950 zlib wrapper -> 'deflate' here.
@@ -60,6 +61,38 @@
           const src = valuesOffset + j * cellBytes;
           for (let c = 0; c < cellBytes; c++) frame[dst + c] = body[src + c];
         }
+      } else if (tag === TAG_RLE_FULL) {
+        const body = await inflate(payload);
+        const bodyView = new DataView(body.buffer, body.byteOffset, body.byteLength);
+        let totalCells = 0;
+        let offset = 0;
+        while (offset < body.length) {
+          totalCells += bodyView.getUint16(offset, true);
+          offset += 2 + cellBytes;
+        }
+        frame = new Uint8Array(totalCells * cellBytes);
+        offset = 0;
+        let dst = 0;
+        while (offset < body.length) {
+          const count = bodyView.getUint16(offset, true);
+          const valOffset = offset + 2;
+          if (cellBytes === 4) {
+            const v0 = body[valOffset], v1 = body[valOffset+1], v2 = body[valOffset+2], v3 = body[valOffset+3];
+            for (let i = 0; i < count; i++) {
+              frame[dst++] = v0; frame[dst++] = v1; frame[dst++] = v2; frame[dst++] = v3;
+            }
+          } else if (cellBytes === 3) {
+            const v0 = body[valOffset], v1 = body[valOffset+1], v2 = body[valOffset+2];
+            for (let i = 0; i < count; i++) {
+              frame[dst++] = v0; frame[dst++] = v1; frame[dst++] = v2;
+            }
+          } else {
+            for (let i = 0; i < count; i++) {
+              for (let c = 0; c < cellBytes; c++) frame[dst++] = body[valOffset + c];
+            }
+          }
+          offset += 2 + cellBytes;
+        }
       } else {
         throw new Error('Unknown ASCILINE codec tag: ' + tag);
       }
@@ -70,5 +103,5 @@
     return { decode, reset() { prev = null; } };
   }
 
-  return { makeDecoder, inflate, TAG_RAW, TAG_ZLIB, TAG_DELTA };
+  return { makeDecoder, inflate, TAG_RAW, TAG_ZLIB, TAG_DELTA, TAG_RLE_FULL };
 });
