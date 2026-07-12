@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASCILINE Studio - compile & play</title>
+<style>
+  :root{
+    color-scheme:light;
+    --bg:#f4f2ec; --ink:#23281f; --muted:#6b7261; --panel:#fffffd;
+    --line:#e2e1d3; --line-strong:#cdccba;
+    --sage:#5f8a5f; --forest:#2f4a2f; --accent:#3f7d4f; --accent-ink:#fff;
+    --accent-primary:#3f7d4f;
+    --stage:#0f120e; --stage-ink:#8fe0a0;
+    --danger:#b23b2e; --radius:12px;
+    --mono:"Courier New",ui-monospace,Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;
+    -webkit-font-smoothing:antialiased}
+  a{color:var(--accent)}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 64px}
+
+  header.top{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  h1.word{font-family:var(--mono);font-weight:700;letter-spacing:3px;font-size:20px;color:var(--forest);margin:0}
+  .word b{color:var(--sage)}
+  .tag{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:1px}
+  .lede{color:var(--muted);max-width:70ch;margin:2px 0 26px;font-size:15px}
+  .lede code{font-family:var(--mono);background:#eceadf;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:.9em}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:820px){.grid{grid-template-columns:1fr}}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:18px 18px 20px;display:flex;flex-direction:column;gap:14px}
+  .card h2{margin:0;font-family:var(--mono);font-size:13px;letter-spacing:2px;color:var(--forest);
+    text-transform:uppercase;display:flex;align-items:center;gap:8px}
+  .card h2 .n{display:inline-flex;width:20px;height:20px;border:1px solid var(--sage);border-radius:50%;
+    align-items:center;justify-content:center;font-size:11px;color:var(--sage)}
+
+  .drop{border:1.5px dashed var(--line-strong);border-radius:10px;padding:26px 16px;text-align:center;
+    cursor:pointer;transition:border-color .15s,background .15s;color:var(--muted);background:#faf9f3}
+  .drop:hover{border-color:var(--sage);background:#f3f6ef}
+  .drop.over{border-color:var(--accent);background:#eef5ec;color:var(--forest)}
+  .drop .big{font-family:var(--mono);color:var(--ink);font-size:14px;letter-spacing:.5px}
+  .drop .sub{font-size:12px;margin-top:6px}
+  .drop.has{border-style:solid;border-color:var(--sage);background:#f2f6ef;color:var(--forest)}
+
+  .opts{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-family:var(--mono);font-size:11px;letter-spacing:1px;color:var(--muted);text-transform:uppercase}
+  .field input{width:96px;font-family:var(--mono);font-size:14px;padding:7px 9px;border:1px solid var(--line-strong);
+    border-radius:7px;background:#fffdf9;color:var(--ink)}
+  .field input:focus{border-color:var(--accent)}
+  .hint{font-size:11px;color:var(--muted)}
+
+  button.btn{font-family:var(--mono);font-size:13px;letter-spacing:2px;text-transform:uppercase;
+    padding:11px 16px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);
+    cursor:pointer;transition:background .15s,color .15s}
+  button.btn:hover:not(:disabled){background:var(--accent);color:var(--accent-ink)}
+  button.btn.solid{background:var(--accent);color:var(--accent-ink)}
+  button.btn:disabled{opacity:.4;cursor:default;border-color:var(--line-strong);color:var(--muted)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+  .bar{height:8px;border-radius:6px;background:#e7e6da;overflow:hidden;border:1px solid var(--line)}
+  .bar > i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s}
+  .status{font-family:var(--mono);font-size:12px;color:var(--muted);min-height:16px}
+  .status.err{color:var(--danger)}
+
+  /* Player stage (reader.js container) */
+  .stage-card{margin-top:20px}
+  #stage{position:relative;width:100%;background:var(--stage);border:1px solid var(--line-strong);
+    border-radius:10px;overflow:hidden;min-height:220px}
+  #stage .ascii-canvas{display:none}
+  #stage .ascii-player{display:none;white-space:pre;font-family:var(--mono);font-weight:700;color:var(--stage-ink);margin:0}
+  #stage .status{position:absolute;top:8px;left:12px;z-index:6;color:var(--stage-ink);
+    background:rgba(0,0,0,.35);padding:2px 8px;border-radius:5px}
+  .play-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:10px;z-index:8;color:var(--stage-ink);cursor:pointer}
+  .play-overlay.hidden{display:none}
+  .play-overlay .disc{width:64px;height:64px;border:2px solid var(--stage-ink);border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-size:22px}
+  .play-overlay .t{font-family:var(--mono);font-size:12px;letter-spacing:1px;opacity:.85}
+  .stage-hint{font-size:11px;color:var(--muted);margin-top:8px;font-family:var(--mono)}
+  .foot{margin-top:26px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px}
+  .foot code{font-family:var(--mono)}
+
+  a:focus-visible,button:focus-visible,input:focus-visible,[role="button"]:focus-visible{
+    outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{transition-duration:1ms!important;animation-duration:1ms!important;scroll-behavior:auto!important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1 class="word">ASCILINE<b> STUDIO</b></h1>
+    <span class="tag">COMPILE &amp; PLAY &middot; STATIC &middot; NO BACKEND</span>
+  </header>
+  <p class="lede">
+    Turn a video into a compiled <code>.ascf</code> entirely in your browser, then play it back.
+    No server, no upload: the file never leaves your machine. Compiling uses the same
+    <code>codec.js</code> wire format the player reads, so the output runs anywhere ASCILINE runs.
+    Pixel mode (color). Audio and ASCII character modes come from the Python <code>compiler.py</code>.
+  </p>
+
+  <div class="grid">
+    <!-- COMPILE -->
+    <section class="card">
+      <h2><span class="n">1</span> Compile a video</h2>
+      <div id="dropVid" class="drop" role="button" tabindex="0" aria-label="Choose or drop a video file to compile to .ascf">
+        <div class="big">Drop a video here</div>
+        <div class="sub">or click to choose &middot; mp4, webm, mov &middot; stays local</div>
+      </div>
+      <input id="fileVid" type="file" accept="video/*" hidden>
+      <div class="opts">
+        <div class="field"><label for="cols">Columns</label><input id="cols" type="number" min="16" max="640" step="2" value="200"></div>
+        <div class="field"><label for="fps">FPS</label><input id="fps" type="number" min="1" max="30" step="1" value="24"></div>
+        <div class="field" style="flex:1;min-width:120px;justify-content:flex-end">
+          <span class="hint">Higher columns = sharper but heavier. Rows auto from aspect.</span>
+        </div>
+      </div>
+      <div class="row">
+        <button id="btnCompile" class="btn solid" disabled>Compile to .ascf</button>
+        <a id="dl" class="btn" style="display:none;text-decoration:none" download>Download .ascf</a>
+      </div>
+      <div class="bar"><i id="prog"></i></div>
+      <div id="stCompile" class="status" role="status" aria-live="polite">Waiting for a video.</div>
+    </section>
+
+    <!-- PLAY -->
+    <section class="card">
+      <h2><span class="n">2</span> Play a .ascf</h2>
+      <div id="dropAscf" class="drop" role="button" tabindex="0" aria-label="Choose or drop a .ascf file, plus an optional .mp3, to play">
+        <div class="big">Drop a .ascf here</div>
+        <div class="sub">or click to choose &middot; add a .mp3 to play sound</div>
+      </div>
+      <input id="fileAscf" type="file" accept=".ascf,.mp3,audio/mpeg" multiple hidden>
+      <div class="status" id="stPlay" role="status" aria-live="polite">A compiled clip auto-loads below. Or drop your own.</div>
+      <div class="hint">Click the stage or press <b>Space</b> to pause. Loops by default.</div>
+    </section>
+  </div>
+
+  <!-- SHARED PLAYER STAGE -->
+  <section class="card stage-card">
+    <h2>Player</h2>
+    <div id="stage">
+      <div class="status" aria-live="polite"></div>
+      <pre class="ascii-player"></pre>
+      <canvas class="ascii-canvas"></canvas>
+      <audio class="ascii-audio" preload="none"></audio>
+      <div class="play-overlay">
+        <div class="disc">&#9654;</div>
+        <div class="t">Compile a video or drop a .ascf</div>
+      </div>
+    </div>
+    <div class="stage-hint">Renders on a canvas, so it keeps animating where a muted &lt;video autoplay&gt; would be blocked (e.g. iOS Low Power Mode).</div>
+  </section>
+
+  <div class="foot">
+    Built on ASCILINE's own <code>codec.js</code> and <code>reader.js</code>. The compiler emits only
+    codec tags 0/1/2 (RAW/ZLIB/DELTA), which the shipped decoder supports. Everything runs client-side.
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<script src="../../codec.js"></script>
+<script src="../reader.js"></script>
+<script src="./encoder.js"></script>
+<script>
+(function(){
+  var stage = document.getElementById('stage');
+  var player = new AscilinePlayer(stage, { loop:true });
+
+  var lastUrl = null, lastAudioUrl = null;
+  function loadIntoPlayer(url, audioUrl){
+    try { player.stop(); } catch(e){}
+    if (lastUrl && lastUrl.startsWith('blob:')) { /* keep for download; revoked elsewhere */ }
+    setTimeout(function(){ player.play(url, audioUrl || null); }, 30);
+  }
+
+  function clamp(v,a,b){ v = parseInt(v)||0; return Math.max(a, Math.min(b, v)); }
+  function seek(video,t){ return new Promise(function(res){ function h(){ video.removeEventListener('seeked',h); res(); } video.addEventListener('seeked',h); try{ video.currentTime = t; }catch(e){ res(); } }); }
+
+  // ---- Compile pipeline (video -> BGR frames -> .ascf) ----
+  var vidFile = null;
+  var dropVid = document.getElementById('dropVid');
+  var fileVid = document.getElementById('fileVid');
+  var btnCompile = document.getElementById('btnCompile');
+  var prog = document.getElementById('prog');
+  var stCompile = document.getElementById('stCompile');
+  var dl = document.getElementById('dl');
+
+  function setStatus(el, msg, err){ el.textContent = msg; el.className = 'status' + (err ? ' err' : ''); }
+
+  function pickVideo(f){
+    if (!f) return;
+    vidFile = f;
+    dropVid.classList.add('has');
+    dropVid.querySelector('.big').textContent = f.name;
+    dropVid.querySelector('.sub').textContent = (f.size/1048576).toFixed(1) + ' MB - ready to compile';
+    btnCompile.disabled = false;
+    setStatus(stCompile, 'Ready. Click "Compile to .ascf".');
+    dl.style.display = 'none';
+  }
+
+  async function compile(){
+    if (!vidFile) return;
+    btnCompile.disabled = true; dl.style.display = 'none'; prog.style.width = '0';
+    var cols = clamp(document.getElementById('cols').value, 16, 640);
+    var targetFps = clamp(document.getElementById('fps').value, 1, 30);
+
+    var url = URL.createObjectURL(vidFile);
+    var video = document.createElement('video');
+    video.muted = true; video.playsInline = true; video.preload = 'auto'; video.src = url;
+    try {
+      await new Promise(function(res,rej){ video.onloadedmetadata = res; video.onerror = function(){ rej(new Error('cannot read this video')); }; });
+    } catch(e){ setStatus(stCompile, e.message, true); URL.revokeObjectURL(url); btnCompile.disabled=false; return; }
+
+    var vw = video.videoWidth, vh = video.videoHeight, dur = video.duration;
+    if (!isFinite(dur) || dur <= 0){ setStatus(stCompile, 'video has no finite duration', true); URL.revokeObjectURL(url); btnCompile.disabled=false; return; }
+    var ratio = vw / Math.max(vh,1);
+    var rows = Math.max(1, Math.round(cols / ratio));   // pixel-mode rows
+    var fps = Math.min(targetFps, 30);
+    var total = Math.max(1, Math.floor(dur * fps));
+
+    var cvs = document.createElement('canvas'); cvs.width = cols; cvs.height = rows;
+    var cx = cvs.getContext('2d', { willReadFrequently:true });
+    var bgr = new Uint8Array(cols*rows*3);
+
+    var enc = AscilineEncoder.makeEncoder(3);
+    var parts = [ AscilineEncoder.ascfHeader(fps, 5, true, cols, rows) ];
+    var bytes = 14;
+    var t0 = performance.now();
+
+    for (var i=0; i<total; i++){
+      var t = Math.min(dur - 1e-3, i / fps);
+      await seek(video, t);
+      cx.drawImage(video, 0, 0, cols, rows);
+      var img = cx.getImageData(0, 0, cols, rows).data;      // RGBA
+      for (var p=0,q=0; p<img.length; p+=4,q+=3){ bgr[q]=img[p+2]; bgr[q+1]=img[p+1]; bgr[q+2]=img[p]; } // -> BGR
+      var out = enc.encode(bgr).msg;
+      var lp = new Uint8Array(4); new DataView(lp.buffer).setUint32(0, out.length, false);
+      parts.push(lp, out); bytes += 4 + out.length;
+      if (i % 3 === 0 || i === total-1){
+        prog.style.width = ((i+1)/total*100).toFixed(1) + '%';
+        setStatus(stCompile, 'Compiling ' + (i+1) + '/' + total + ' frames - ' + (bytes/1048576).toFixed(2) + ' MB');
+      }
+    }
+    URL.revokeObjectURL(url);
+
+    var ascf = AscilineEncoder.concat(parts);
+    var blob = new Blob([ascf], { type:'application/octet-stream' });
+    var outUrl = URL.createObjectURL(blob);
+    var name = (vidFile.name.replace(/\.[^.]+$/, '') || 'out') + '.ascf';
+    dl.href = outUrl; dl.download = name; dl.style.display = '';
+    dl.textContent = 'Download ' + name + ' (' + (ascf.length/1048576).toFixed(2) + ' MB)';
+    var secs = ((performance.now()-t0)/1000).toFixed(1);
+    setStatus(stCompile, 'Done: ' + total + ' frames, ' + cols + 'x' + rows + ' @ ' + fps + ' fps, ' + (ascf.length/1048576).toFixed(2) + ' MB in ' + secs + 's. Playing below.');
+    prog.style.width = '100%';
+    btnCompile.disabled = false;
+    loadIntoPlayer(outUrl, null);
+  }
+
+  btnCompile.addEventListener('click', function(){ compile().catch(function(e){ setStatus(stCompile, 'Error: ' + e.message, true); btnCompile.disabled=false; }); });
+
+  // ---- Play existing .ascf (+ optional .mp3) ----
+  var dropAscf = document.getElementById('dropAscf');
+  var fileAscf = document.getElementById('fileAscf');
+  var stPlay = document.getElementById('stPlay');
+
+  function pickAscf(list){
+    var ascf=null, mp3=null;
+    for (var i=0;i<list.length;i++){
+      var f = list[i]; var n = (f.name||'').toLowerCase();
+      if (n.endsWith('.ascf')) ascf = f;
+      else if (n.endsWith('.mp3') || f.type==='audio/mpeg') mp3 = f;
+    }
+    if (!ascf){ setStatus(stPlay, 'Please include a .ascf file.', true); return; }
+    dropAscf.classList.add('has');
+    dropAscf.querySelector('.big').textContent = ascf.name;
+    dropAscf.querySelector('.sub').textContent = mp3 ? ('+ ' + mp3.name) : 'no audio';
+    var aUrl = URL.createObjectURL(ascf);
+    var mUrl = mp3 ? URL.createObjectURL(mp3) : null;
+    setStatus(stPlay, 'Playing ' + ascf.name + (mp3 ? ' with audio' : '') + '.');
+    loadIntoPlayer(aUrl, mUrl);
+  }
+
+  // ---- Drop-zone wiring ----
+  function wireDrop(zone, input, onFiles){
+    zone.addEventListener('click', function(){ input.click(); });
+    zone.addEventListener('keydown', function(e){ if(e.key==='Enter'||e.key===' '||e.code==='Space'){ e.preventDefault(); e.stopPropagation(); input.click(); } });
+    input.addEventListener('change', function(){ if (input.files && input.files.length) onFiles(input.files); });
+    ['dragenter','dragover'].forEach(function(ev){ zone.addEventListener(ev, function(e){ e.preventDefault(); zone.classList.add('over'); }); });
+    ['dragleave','dragend','drop'].forEach(function(ev){ zone.addEventListener(ev, function(e){ e.preventDefault(); zone.classList.remove('over'); }); });
+    zone.addEventListener('drop', function(e){ if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) onFiles(e.dataTransfer.files); });
+  }
+  wireDrop(dropVid, fileVid, function(files){ pickVideo(files[0]); });
+  wireDrop(dropAscf, fileAscf, function(files){ pickAscf(files); });
+
+  // whole-window drag guard so a stray drop doesn't navigate away
+  ['dragover','drop'].forEach(function(ev){ window.addEventListener(ev, function(e){ e.preventDefault(); }); });
+})();
+</script>
+</body>
+</html>
