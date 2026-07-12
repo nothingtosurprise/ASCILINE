@@ -1,10 +1,10 @@
 /**
  * encoder.js - client-side ASCILINE .ascf encoder (mirror of codec.py).
  *
- * Produces bytes the shipped codec.js decodes exactly. It emits ONLY the tags
- * codec.js understands: 0 RAW, 1 ZLIB, 2 DELTA. It deliberately does NOT emit
- * tag 3 (RLE_FULL): the shipped codec.js throws on it, so any .ascf using tag 3
- * cannot play in the current player. Lossless (tolerance 0). A forced keyframe
+ * Produces bytes the shipped codec.js decodes exactly. It emits only tags
+ * 0 RAW, 1 ZLIB, 2 DELTA — codec.js also supports tag 3 (RLE_FULL), but this
+ * encoder doesn't build RLE runs to keep the JS side simple; RAW/ZLIB/DELTA
+ * already covers most cases reasonably well. Lossless (tolerance 0). A forced keyframe
  * every 48 frames bounds delta chains and lets late joiners resync.
  *
  * Deflate is pluggable so the same file runs in the browser (pako) and Node

@@ -207,9 +207,12 @@
     dl.style.display = 'none';
   }
 
+  var MAX_DURATION_SOFT = 120;  // 120 seconds — requires confirmation
+  var MAX_TOTAL_FRAMES  = 6000; // absolute ceiling
+  var compileAborted = false;
+
   async function compile(){
     if (!vidFile) return;
-    btnCompile.disabled = true; dl.style.display = 'none'; prog.style.width = '0';
     var cols = clamp(document.getElementById('cols').value, 16, 640);
     var targetFps = clamp(document.getElementById('fps').value, 1, 30);
 
@@ -222,8 +225,30 @@
 
     var vw = video.videoWidth, vh = video.videoHeight, dur = video.duration;
     if (!isFinite(dur) || dur <= 0){ setStatus(stCompile, 'video has no finite duration', true); URL.revokeObjectURL(url); btnCompile.disabled=false; return; }
+
+    var estFrames = Math.floor(dur * Math.min(targetFps, 30));
+    if (dur > MAX_DURATION_SOFT || estFrames > MAX_TOTAL_FRAMES) {
+      var mins = (dur/60).toFixed(1);
+      var ok = confirm(
+        'This video is ' + mins + ' min long (~' + estFrames + ' frames).\n' +
+        'Compiling this in-browser may take a long time and use a lot of memory.\n' +
+        'For longer videos, the Python compiler.py is faster and more efficient.\n\n' +
+        'Continue anyway?'
+      );
+      if (!ok) { URL.revokeObjectURL(url); return; }
+    }
+
+    btnCompile.disabled = false; dl.style.display = 'none'; prog.style.width = '0';
+    compileAborted = false;
+    btnCompile.textContent = 'Cancel';
+
     var ratio = vw / Math.max(vh,1);
     var rows = Math.max(1, Math.round(cols / ratio));   // pixel-mode rows
+    var MAX_ROWS = 350;
+    if (rows > MAX_ROWS) {
+      cols = Math.max(1, Math.round(cols * MAX_ROWS / rows));
+      rows = MAX_ROWS;
+    }
     var fps = Math.min(targetFps, 30);
     var total = Math.max(1, Math.floor(dur * fps));
 
@@ -237,6 +262,7 @@
     var t0 = performance.now();
 
     for (var i=0; i<total; i++){
+      if (compileAborted) { setStatus(stCompile, 'Cancelled.'); break; }
       var t = Math.min(dur - 1e-3, i / fps);
       await seek(video, t);
       cx.drawImage(video, 0, 0, cols, rows);
@@ -252,6 +278,12 @@
     }
     URL.revokeObjectURL(url);
 
+    if (compileAborted) {
+      btnCompile.disabled = false;
+      btnCompile.textContent = 'Compile to .ascf';
+      return;
+    }
+
     var ascf = AscilineEncoder.concat(parts);
     var blob = new Blob([ascf], { type:'application/octet-stream' });
     var outUrl = URL.createObjectURL(blob);
@@ -262,10 +294,14 @@
     setStatus(stCompile, 'Done: ' + total + ' frames, ' + cols + 'x' + rows + ' @ ' + fps + ' fps, ' + (ascf.length/1048576).toFixed(2) + ' MB in ' + secs + 's. Playing below.');
     prog.style.width = '100%';
     btnCompile.disabled = false;
+    btnCompile.textContent = 'Compile to .ascf';
     loadIntoPlayer(outUrl, null);
   }
 
-  btnCompile.addEventListener('click', function(){ compile().catch(function(e){ setStatus(stCompile, 'Error: ' + e.message, true); btnCompile.disabled=false; }); });
+  btnCompile.addEventListener('click', function(){
+    if (btnCompile.textContent === 'Cancel') { compileAborted = true; return; }
+    compile().catch(function(e){ setStatus(stCompile, 'Error: ' + e.message, true); btnCompile.disabled=false; btnCompile.textContent='Compile to .ascf'; });
+  });
 
   // ---- Play existing .ascf (+ optional .mp3) ----
   var dropAscf = document.getElementById('dropAscf');
