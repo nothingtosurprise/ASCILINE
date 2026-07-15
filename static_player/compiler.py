@@ -11,7 +11,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import the existing engine components
 from ascii_video_player2 import VideoDecoder, AsciiMapper
-from codec import encode_frame, DEFAULT_LEVEL
+from codec import encode_frame, DEFAULT_LEVEL, ProfileEncoder
 
 def extract_audio(video_path: str, output_path: str):
     print(f"[Audio] Attempting to extract audio to {output_path}...")
@@ -95,6 +95,23 @@ def compile_video(args):
 
     print(f"[Compiler] Dimensions: {cols}x{rows} | Mode: {render_mode} | Pixel: {pixel_mode} | FPS: {effective_fps:.1f}")
 
+    # Opt-in lossy DCT profile (tag 4): a separate profile, not a tag-race competitor.
+    profile_enc = None
+    if args.profile:
+        if not pixel_mode:
+            print("Error: --profile requires --pixel (the lossy DCT profile is pixel mode only).")
+            decoder.release()
+            return
+        # 8x8 blocks over 4:2:0 planes require cols/rows to be multiples of 16.
+        pc = ((cols + 15) // 16) * 16
+        pr = ((rows + 15) // 16) * 16
+        if pc != cols or pr != rows:
+            cols, rows = pc, pr
+            decoder.release()
+            decoder = VideoDecoder(video_path, cols, rows, skip_gray=pixel_mode)
+        profile_enc = ProfileEncoder(cols, rows, args.qf)
+        print(f"[Compiler] Lossy DCT profile (tag 4) ON | QF={args.qf} | grid padded to {cols}x{rows}")
+
     char_byte_lut = np.array([ord(c) for c in mapper._lut], dtype=np.uint8)
     qb = {5: 0, 4: 2, 3: 3, 2: 5}.get(render_mode, 0)
     
@@ -130,10 +147,13 @@ def compile_video(args):
                     frame_px = np.ascontiguousarray(bgr_frame)
                     if pixel_qb > 0:
                         frame_px = (frame_px >> pixel_qb) << pixel_qb
-                    msg, prev_frame = encode_frame(
-                        frame_px,
-                        prev_frame, frame_index, level=level, tolerance=tolerance
-                    )
+                    if profile_enc is not None:
+                        msg, prev_frame = profile_enc.encode(frame_px)
+                    else:
+                        msg, prev_frame = encode_frame(
+                            frame_px,
+                            prev_frame, frame_index, level=level, tolerance=tolerance
+                        )
                 else:
                     indices = np.floor_divide(gray_frame, max(1, 256 // mapper._n))
                     np.clip(indices, 0, mapper._n - 1, out=indices)
@@ -181,6 +201,8 @@ if __name__ == "__main__":
     parser.add_argument("--tolerance", type=int, default=0, help="Color drift tolerance (0=lossless)")
     parser.add_argument("--hard", action="store_true", help="Use maximum zlib compression (level 9) instead of default (level 3). Slower but smaller file.")
     parser.add_argument("--quantize", type=int, default=0, choices=[0, 1, 2, 3], metavar="0-3", help="Pixel mode color quantization: bits to drop per channel (0=lossless, 1=slight, 2=medium, 3=aggressive). Reduces file size.")
+    parser.add_argument("--profile", action="store_true", help="Opt-in lossy DCT compression profile (tag 4, pixel mode). ~4-5x smaller at matched quality. Implies --pixel.")
+    parser.add_argument("--qf", type=int, default=70, help="Profile quality factor 1-100 (higher = better quality and larger file). Default 70.")
     parser.add_argument("--out", type=str, default="", help="Output base name")
     
     args = parser.parse_args()
