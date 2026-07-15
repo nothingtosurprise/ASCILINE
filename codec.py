@@ -199,49 +199,64 @@ def yuv_to_bgr(Y,Cb,Cr):  # planes uint8 -> BGR bytes, integer BT.601 full-range
     return np.clip(np.stack([B,G,R],2),0,255).astype(np.uint8).tobytes()
 
 def _enc_plane(cur,prev,ftype,use_mv,qm,DZ,SKIP_T):
+    # Whole-plane vectorised: every 8x8 block is predicted, transformed, quantised,
+    # reconstructed and run-length coded in batch. Same decisions, same integers and
+    # same bitstream as a per-block loop, but without the per-block Python overhead.
     ph,pw=cur.shape; nbx=pw//8; nby=ph//8; nb=nbx*nby
-    recon=np.empty_like(cur); skip=np.zeros(nb,dtype=bool); blob=bytearray(); bi=0; dcPred=0
-    if ftype==1 and use_mv:
+    blocks=cur.reshape(nby,8,nbx,8).transpose(0,2,1,3).astype(np.float64)
+    mvx=np.zeros((nby,nbx),np.int64); mvy=np.zeros((nby,nbx),np.int64)
+    if ftype==0:
+        pred=np.full((nby,nbx,8,8),128.0)
+    elif use_mv:
         curi=cur.astype(np.int16); pad=np.pad(prev,R_SEARCH,mode='edge').astype(np.int16)
-        best=np.abs(curi-prev.astype(np.int16)).reshape(nby,8,nbx,8).sum(axis=(1,3)).astype(np.int64)
-        mvy=np.zeros((nby,nbx),np.int64); mvx=np.zeros((nby,nbx),np.int64)
+        # integer SADs: einsum reduces ~2x faster than a tuple-axis sum, same integers
+        _sad=lambda d: np.einsum('aibj->ab',np.abs(d).astype(np.int32).reshape(nby,8,nbx,8))
+        best=_sad(curi-prev.astype(np.int16)).astype(np.int64)
         for dy in range(-R_SEARCH,R_SEARCH+1):
             for dx in range(-R_SEARCH,R_SEARCH+1):
                 if dx==0 and dy==0: continue
                 sh=pad[R_SEARCH+dy:R_SEARCH+dy+ph,R_SEARCH+dx:R_SEARCH+dx+pw]
-                sad=np.abs(curi-sh).reshape(nby,8,nbx,8).sum(axis=(1,3))
+                sad=_sad(curi-sh)
                 m=sad<best; best=np.where(m,sad,best); mvx=np.where(m,dx,mvx); mvy=np.where(m,dy,mvy)
         padu=np.pad(prev,R_SEARCH,mode='edge')
-    for by in range(nby):
-        for bx in range(nbx):
-            blk=cur[by*8:by*8+8,bx*8:bx*8+8].astype(np.float64); dx=dy=0
-            if ftype==0: pred=np.full((8,8),128.0)
-            elif use_mv:
-                dy=int(mvy[by,bx]); dx=int(mvx[by,bx])
-                pred=padu[R_SEARCH+by*8+dy:R_SEARCH+by*8+dy+8,R_SEARCH+bx*8+dx:R_SEARCH+bx*8+dx+8].astype(np.float64)
-            else: pred=prev[by*8:by*8+8,bx*8:bx*8+8].astype(np.float64)
-            _t=(_F@(blk-pred)@_F.T)/qm; Cq=np.round(_t).astype(np.int64)
-            if DZ>0.5: Cq[np.abs(_t)<DZ]=0
-            _sk=False
-            if ftype==1 and dx==0 and dy==0:
-                if not Cq.any(): _sk=True
-                elif SKIP_T>0 and float(np.sum((blk-pred)**2))<SKIP_T: _sk=True
-            if _sk:
-                skip[bi]=True; recon[by*8:by*8+8,bx*8:bx*8+8]=prev[by*8:by*8+8,bx*8:bx*8+8]
-            else:
-                recon[by*8:by*8+8,bx*8:bx*8+8]=np.clip(pred.astype(np.int64)+_idct_int(Cq*qm),0,255).astype(np.uint8)
-                if ftype==1 and use_mv: blob+=struct.pack('bb',dx,dy)
-                zz=Cq.reshape(-1)[ZZ].astype(np.int64).copy()
-                _dc=int(zz[0]); zz[0]=_dc-dcPred; dcPred=_dc
-                pairs=bytearray(); run=0
-                for v in zz:
-                    if v==0: run+=1
-                    else: pairs+=struct.pack('<Bh',run,int(v)); run=0
-                blob+=bytes([len(pairs)//3])+bytes(pairs)
-            bi+=1
-    head=bytearray()
-    if ftype==1: head+=np.packbits(skip).tobytes()
-    return bytes(head)+bytes(blob),recon
+        ry=(R_SEARCH+np.arange(nby)[:,None]*8+mvy)[:,:,None]+np.arange(8)
+        rx=(R_SEARCH+np.arange(nbx)[None,:]*8+mvx)[:,:,None]+np.arange(8)
+        pred=padu[ry[:,:,:,None],rx[:,:,None,:]].astype(np.float64)  # edge-pad == the decoder's clamp
+    else:
+        pred=prev.reshape(nby,8,nbx,8).transpose(0,2,1,3).astype(np.float64)
+    resid=blocks-pred
+    _t=(_F@resid@_F.T)/qm
+    Cq=np.round(_t)
+    if DZ>0.5: Cq=np.where(np.abs(_t)<DZ,0.0,Cq)
+    Cq=Cq.astype(np.int64)
+    if ftype==1:
+        sse=(resid*resid).sum(axis=(2,3))
+        skip=((mvx==0)&(mvy==0))&((~Cq.any(axis=(2,3)))|((SKIP_T>0)&(sse<SKIP_T)))
+    else:
+        skip=np.zeros((nby,nbx),bool)
+    rec=np.clip(pred.astype(np.int64)+((MIT@(Cq*qm)@MI+2048)//4096),0,255).astype(np.uint8)
+    if ftype==1:
+        rec=np.where(skip[:,:,None,None],prev.reshape(nby,8,nbx,8).transpose(0,2,1,3),rec)
+    recon=np.ascontiguousarray(rec.transpose(0,2,1,3).reshape(ph,pw))
+    order=np.nonzero((~skip).reshape(-1))[0]
+    zzf=Cq.reshape(nb,64)[:,ZZ][order]
+    if len(order):
+        zzf=zzf.copy(); zzf[:,0]=np.diff(zzf[:,0],prepend=0)  # DC DPCM over coded blocks, raster order
+    bidx,pos=np.nonzero(zzf)
+    same=np.zeros(len(pos),bool); same[1:]=bidx[1:]==bidx[:-1]
+    prevpos=np.where(same,np.concatenate(([0],pos[:-1])),-1)
+    vals=zzf[bidx,pos]
+    assert not len(vals) or np.abs(vals).max()<32768, "profile: coefficient out of int16 range"
+    pairs=np.empty(len(pos),dtype=np.dtype([('r','u1'),('v','<i2')]))  # packed 3B == struct '<Bh'
+    pairs['r']=(pos-prevpos-1).astype(np.uint8); pairs['v']=vals
+    pb=pairs.tobytes(); counts=(zzf!=0).sum(1) if len(order) else np.zeros(0,np.int64)
+    offs=np.concatenate(([0],np.cumsum(counts)))*3
+    mvxf=mvx.reshape(-1); mvyf=mvy.reshape(-1); blob=bytearray()
+    for j,b in enumerate(order):
+        if ftype==1 and use_mv: blob+=struct.pack('bb',int(mvxf[b]),int(mvyf[b]))
+        blob+=bytes([counts[j]])+pb[offs[j]:offs[j+1]]
+    head=np.packbits(skip.reshape(-1)).tobytes() if ftype==1 else b''
+    return head+bytes(blob),recon
 
 class ProfileEncoder:
     def __init__(self, W, H, QF=70, DZ=0.75, SKIP_T=256, level=6):

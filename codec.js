@@ -31,7 +31,9 @@
   }
 
   // ===== Opt-in lossy DCT profile (tag 4, pixel mode). Deterministic constants,
-  // bit-exact with codec.py. Integer IDCT and integer YUV420->BGR. =====
+  // bit-exact with codec.py: integer IDCT and integer YUV420 -> BGR.
+  // The hot path is allocation-free: per-block scratch is hoisted and reused, and
+  // DC-only blocks skip the IDCT entirely (mathematically identical result). =====
   const _P_MI = Int32Array.from([23,23,23,23,23,23,23,23,31,27,18,6,-6,-18,-27,-31,30,12,-12,-30,-30,-12,12,30,
     27,-6,-31,-18,18,31,6,-27,23,-23,-23,23,23,-23,-23,23,18,-31,6,27,-27,-6,31,-18,
     12,-30,30,-12,-12,30,-30,12,6,-18,27,-31,31,-27,18,-6]);
@@ -42,11 +44,17 @@
   const _P_QCB=[17,18,24,47,99,99,99,99,18,21,26,66,99,99,99,99,24,26,56,99,99,99,99,99,47,66,99,99,99,99,99,99,
     99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99,99];
   function _pqtables(QF){const S=QF<50?5000/QF:200-2*QF;const f=b=>{const o=new Int32Array(64);for(let i=0;i<64;i++){let v=Math.floor((b[i]*S+50)/100);o[i]=v<1?1:(v>255?255:v);}return o;};return [f(_P_QLB),f(_P_QCB)];}
-  function _pidct(C){const t=new Float64Array(64);
-    for(let u=0;u<8;u++)for(let x=0;x<8;x++){let s=0;for(let v=0;v<8;v++)s+=C[u*8+v]*_P_MI[v*8+x];t[u*8+x]=s;}
-    const o=new Int32Array(64);
-    for(let y=0;y<8;y++)for(let x=0;x<8;x++){let s=0;for(let u=0;u<8;u++)s+=_P_MI[u*8+y]*t[u*8+x];o[y*8+x]=Math.floor((s+2048)/4096);}
-    return o;}
+  // Reused scratch. Decoding is strictly sequential, so sharing these is safe and
+  // keeps the block loop free of allocations (GC pressure at high column counts).
+  const _pT = new Float64Array(64);
+  const _pO = new Int32Array(64);
+  const _pZ = new Int32Array(64);
+  const _pC = new Int32Array(64);
+  function _pidct(C){
+    for(let u=0;u<8;u++)for(let x=0;x<8;x++){let s=0;for(let v=0;v<8;v++)s+=C[u*8+v]*_P_MI[v*8+x];_pT[u*8+x]=s;}
+    for(let y=0;y<8;y++)for(let x=0;x<8;x++){let s=0;for(let u=0;u<8;u++)s+=_P_MI[u*8+y]*_pT[u*8+x];_pO[y*8+x]=Math.floor((s+2048)/4096);}
+    return _pO;
+  }
   function _pDecodePlane(data,off,P,NP,ft,useMv,qm){
     const W=P.w,H=P.h,nbx=W>>3,nby=H>>3,nb=nbx*nby;
     let skip=null; if(ft===1){const mb=(nb+7)>>3;skip=data.subarray(off,off+mb);off+=mb;}
@@ -55,16 +63,25 @@
       if(ft===1 && (skip[bi>>3]&(128>>(bi&7)))){bi++;continue;}
       let dx=0,dy=0;
       if(ft===1&&useMv){dx=(data[off]<<24>>24);dy=(data[off+1]<<24>>24);off+=2;}
-      const nP=data[off++]; const zz=new Int32Array(64); let pos=0;
-      for(let k=0;k<nP;k++){const run=data[off++];let v=data[off]|(data[off+1]<<8);off+=2;if(v&0x8000)v-=0x10000;pos+=run;zz[pos]=v;pos++;}
-      zz[0]+=dcPred; dcPred=zz[0];
-      const C=new Int32Array(64); for(let k=0;k<64;k++){const id=_P_ZZ[k]; C[id]=zz[k]*qm[id];}
-      const res=_pidct(C);
-      for(let y=0;y<8;y++)for(let x=0;x<8;x++){
-        let pred;
-        if(ft===0)pred=128;
-        else{let sx=bx*8+x+dx,sy=by*8+y+dy;sx=sx<0?0:(sx>=W?W-1:sx);sy=sy<0?0:(sy>=H?H-1:sy);pred=P.buf[sy*W+sx];}
-        let val=pred+res[y*8+x];NP.buf[(by*8+y)*W+(bx*8+x)]=val<0?0:(val>255?255:val);
+      const nP=data[off++];
+      _pZ.fill(0);
+      let pos=0,lastNz=-1;
+      for(let k=0;k<nP;k++){const run=data[off++];let v=data[off]|(data[off+1]<<8);off+=2;if(v&0x8000)v-=0x10000;pos+=run;_pZ[pos]=v;lastNz=pos;pos++;}
+      _pZ[0]+=dcPred; dcPred=_pZ[0];
+      // DC-only block: the first MI row is constant (23), so the IDCT collapses to a
+      // flat value. Same integers, same rounding -> identical to the full transform.
+      let res=null,flat=0;
+      if(lastNz<=0){ flat=Math.floor((529*(_pZ[0]*qm[0])+2048)/4096); }
+      else { for(let k=0;k<64;k++){const id=_P_ZZ[k]; _pC[id]=_pZ[k]*qm[id];} res=_pidct(_pC); }
+      for(let y=0;y<8;y++){
+        const row=(by*8+y)*W;
+        for(let x=0;x<8;x++){
+          let pred;
+          if(ft===0)pred=128;
+          else{let sx=bx*8+x+dx,sy=by*8+y+dy;sx=sx<0?0:(sx>=W?W-1:sx);sy=sy<0?0:(sy>=H?H-1:sy);pred=P.buf[sy*W+sx];}
+          const val=pred+(res===null?flat:res[y*8+x]);
+          NP.buf[row+bx*8+x]=val<0?0:(val>255?255:val);
+        }
       }
       bi++;
     }
@@ -76,22 +93,26 @@
       out[o]=B<0?0:(B>255?255:B);out[o+1]=G<0?0:(G>255?255:G);out[o+2]=R<0?0:(R>255?255:R);}}
     return out;}
   function makeProfileDecoder(){
-    let W=0,H=0,cW=0,cH=0,planes=null,QL=null,QC=null;
+    let W=0,H=0,cW=0,cH=0,planes=null,spare=null,QL=null,QC=null;
+    const alloc=()=>[{w:W,h:H,buf:new Uint8Array(W*H)},{w:cW,h:cH,buf:new Uint8Array(cW*cH)},{w:cW,h:cH,buf:new Uint8Array(cW*cH)}];
     async function decode(message){
       const b=message instanceof Uint8Array?message:new Uint8Array(message);
       const dv=new DataView(b.buffer,b.byteOffset,b.byteLength);
       const idx=dv.getUint32(0,false); const payload=await inflate(b.subarray(5)); const ft=payload[0];
       let off=1;
-      if(ft===0){const QF=payload[1];const cols=(payload[2]<<8)|payload[3];const rows=(payload[4]<<8)|payload[5];off=6;
-        const q=_pqtables(QF);QL=q[0];QC=q[1];
-        if(planes===null||W!==cols||H!==rows){W=cols;H=rows;cW=W>>1;cH=H>>1;
-          planes=[{w:W,h:H,buf:new Uint8Array(W*H)},{w:cW,h:cH,buf:new Uint8Array(cW*cH)},{w:cW,h:cH,buf:new Uint8Array(cW*cH)}];}}
-      const out=planes.map(p=>({w:p.w,h:p.h,buf:new Uint8Array(p.buf)}));
+      if(ft===0){ // keyframe self-describes: [QF][cols u16][rows u16]
+        const QF=payload[1]; const cols=(payload[2]<<8)|payload[3]; const rows=(payload[4]<<8)|payload[5]; off=6;
+        const q=_pqtables(QF); QL=q[0]; QC=q[1];
+        if(planes===null||W!==cols||H!==rows){W=cols;H=rows;cW=W>>1;cH=H>>1;planes=alloc();spare=alloc();}
+      }
+      // ping-pong the plane buffers instead of allocating a new set every frame
+      const out=spare;
+      for(let i=0;i<3;i++) out[i].buf.set(planes[i].buf);
       for(let pi=0;pi<3;pi++) off=_pDecodePlane(payload,off,planes[pi],out[pi],ft,pi===0,pi===0?QL:QC);
-      planes=out;
-      return {frameIndex:idx, frame:_pYuvToBgr(out[0].buf,out[1].buf,out[2].buf,W,H)};
+      spare=planes; planes=out;
+      return {frameIndex:idx, frame:_pYuvToBgr(planes[0].buf,planes[1].buf,planes[2].buf,W,H)};
     }
-    return {decode, reset(){planes=null;QL=QC=null;}};
+    return {decode, reset(){planes=null;spare=null;QL=QC=null;}};
   }
 
   /**
