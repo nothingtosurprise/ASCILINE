@@ -126,7 +126,7 @@ It's also the more experimental of the two compilers: as noted above, it only em
 <a id="playing-a-compiled-file"></a>
 ### Playing a compiled file (the full player)
 
-For the full experience — audio sync and live ASCII/pixel mode switching — use the main player at `static_player/index.html`.
+For the full experience — audio sync and ASCII/pixel mode support — use the main player at `static_player/index.html`.  
 
 Modern browsers block `.ascf` fetches over `file://`, so you can't just double-click the file; serve the folder through a static file server instead:
 
