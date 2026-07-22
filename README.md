@@ -17,15 +17,15 @@
 | Output | Details |
 | :--- | :--- |
 | <img src="https://github.com/user-attachments/assets/ccc727c9-c697-49f2-85e1-6f8c366f2019" width="400" alt="Original Source" /> | **Original Source**<br>Standard MP4 video file. |
-| <img src="https://github.com/user-attachments/assets/6bd7f5c0-81de-49fe-ba0d-9a8872ec8ae3" width="400" alt="ASCII Mode" /> | **ASCII Mode**<br>Rendered using Mode 3 (32K colors) from a 30fps source. |
-| <img src="https://github.com/user-attachments/assets/1fd88c3d-97d1-441a-a071-16de24ea82c0" width="400" alt="PIXEL Mode" /> | **PIXEL Mode**<br>Rendered using Mode 5 (16M colors) combined with the `--pixel` flag for ultra-high fidelity. |
+| <img src="https://github.com/user-attachments/assets/6bd7f5c0-81de-49fe-ba0d-9a8872ec8ae3" width="400" alt="ASCII Mode" /> | **ASCII Mode**<br>Rendered using Mode 4 (32K colors) from a 30fps source. |
+| <img src="https://github.com/user-attachments/assets/1fd88c3d-97d1-441a-a071-16de24ea82c0" width="400" alt="PIXEL Mode" /> | **PIXEL Mode**<br>Rendered using the `--pixel` flag for high fidelity colored blocks █ . |
 
 ## Table of Contents
 
 - [Design Goals](#design-goals)
 - [Technical Features](#technical-features)
 - [Architecture](#architecture)
-- [Adaptive Frame Codec (opt-in, ASCII modes 2–5)](#adaptive-frame-codec-opt-in-ascii-modes-25)
+- [Adaptive Frame Codec (opt-in, ASCII modes 2-6)](#adaptive-frame-codec-opt-in-ascii-modes-2-6)
 - [Zero-Dependency Static Web Player](#zero-dependency-static-web-player)
 - [Installation](#installation)
 - [Customization](#customization)
@@ -52,7 +52,7 @@
 - **HTML5 Canvas rendering**, tuned for 24–30 FPS playback. Higher-FPS sources are automatically decimated for stability.
 - **Master clock sync**: the audio track is the absolute time reference, keeping A/V synchronized.
 - **Low-overhead binary protocol**: frames are streamed as raw `Uint8Array` straight to the canvas.
-- **Multiple color modes**: from black & white up to 16M-color ultra-fidelity.
+- **Multiple color modes**: from black & white up to 16M-color high fidelity.
 - **Flexible video management**: JSON playlists (per-video mode & volume), folder-based auto-queuing, single-file mode, infinite loop — all via CLI flags.
 
 ## Architecture
@@ -61,22 +61,23 @@
 2. **Frontend (vanilla JS)**: receives binary frames over WebSocket, manages a jitter buffer, renders to a canvas grid.
 3. **Communication**: a custom `INIT` handshake negotiates resolution/FPS, followed by the binary frame stream.
 
-## Adaptive Frame Codec (opt-in, ASCII modes 2–5)
+## Adaptive Frame Codec (opt-in, ASCII modes 2-6)
 
 The original protocol re-sends the full grid every frame. An opt-in adaptive codec picks the smallest of several encodings per frame and tags it with a 1-byte header, without changing the rendered output:
 
 | tag | encoding | best for |
 | :-- | :------- | :------- |
-| `0` RAW | framebuffer as-is (legacy) | incompressible frames |
-| `1` ZLIB | `zlib(framebuffer)` | general motion |
-| `2` DELTA | only the cells that changed since the last frame | static / low-motion |
-| `3` RLE_FULL | run-length encoded framebuffer | large flat-color regions |
+| `0`&nbsp;RAW | framebuffer as-is (legacy) | incompressible frames |
+| `1`&nbsp;ZLIB | `zlib(framebuffer)` | general motion |
+| `2`&nbsp;DELTA | only the cells that changed since the last frame | static / low-motion |
+| `3`&nbsp;RLE_FULL | run-length encoded framebuffer | large flat-color regions |
+| `4`&nbsp;DCT | Discrete Cosine Transform | High-ratio spatial compression. Used exclusively by the static player. Automatically enforces `--pixel` output. |
 
 Clients opt in with `/ws?codec=adaptive`; omit it and you get the original protocol byte-for-byte, so existing clients are unaffected. A keyframe is forced periodically so dropped packets / late joiners resync.
 
 `codec.js` (the shared decoder used by both the live player and the test suite) understands all four tags. **Not every encoder produces all four**, though: the Python side (`codec.py`, used by the live server and by `static_player/compiler.py`) can emit RLE_FULL when it wins the size comparison. The browser-side JS encoder (`static_player/studio/encoder.js`, used by the client-only Studio compiler) intentionally only emits RAW/ZLIB/DELTA — it doesn't implement RLE run-building, to keep the in-browser encoder simple. RAW/ZLIB/DELTA already cover most cases reasonably well, so this is a deliberate simplicity/size trade-off, not a bug — decoders stay permissive, encoders stay conservative.
 
-**Measured wire savings** (mode 5, 200×80 grid):
+**Measured wire savings** (mode 6, 200×80 grid):
 
 | content | vs. legacy |
 | :------ | :--------- |
@@ -109,6 +110,8 @@ python static_player/compiler.py your_video.mp4 --cols 250 --pixel --quantize 2
 ```
 
 - `--quantize 0-3`: drops color bits to reduce file size (0 = lossless, 3 = aggressive).
+- `--profile`: Enables Discrete Cosine Transform (Tag 4) spatial compression. Provides the engine's highest compression ratio, significantly reducing the final `.ascf` payload size at the cost of higher encode times and lossy quantization. Automatically enforces `--pixel`.
+- `--qf 1-100`: Quality factor for the DCT profile (default: 70). Higher means better quality and larger file.
 - `--tolerance`: color drift tolerance before a pixel update is sent, to skip invisible changes.
 - `--hard`: max zlib compression (level 9) — slower to compile, smaller output.
 
@@ -119,24 +122,28 @@ This is what powers the live demo at [asciline.dev](https://www.asciline.dev): t
 
 `static_player/studio/` is a standalone page (`index.html` + `encoder.js`, using `pako` from a CDN) that compiles a video to `.ascf` entirely client-side — drop a video in, get a `.ascf` out, nothing ever leaves your browser, no Python required.
 
-The page includes a basic built-in preview, so you can see the result immediately with no server needed — but this quick preview lacks audio and ASCII/pixel mode switching.
+The page includes a built-in preview with a **custom seekbar**, allowing you to instantly scrub through your compiled clip. Because it shares the main `codec.js`, this studio player natively decodes all advanced compression tags (including Tag 4 DCT). 
 
-It's also the more experimental of the two compilers: as noted above, it only emits RAW/ZLIB/DELTA, not RLE_FULL. Great for quick, short clips; for production output, longer files, or maximum compression, use the Python compiler instead.
+*(Note: While it can play all tags, the client-side encoder itself is conservative and only emits RAW/ZLIB/DELTA for speed. For production output or maximum compression with RLE/DCT, use the Python compiler).*
 
 <a id="playing-a-compiled-file"></a>
 ### Playing a compiled file (the full player)
 
-For the full experience — audio sync and ASCII/pixel mode support — use the main player at `static_player/index.html`.  
+For the full experience — audio sync and ASCII/pixel mode support — use the main player at `static_player/index.html`. 
 
-Modern browsers block `.ascf` fetches over `file://`, so you can't just double-click the file; serve the folder through a static file server instead:
+**Method A: Drag & Drop (No server needed!)**
+Simply open `static_player/index.html` in your browser and drag your `.ascf` file (along with an optional `.mp3` file for audio) directly onto the page. Playback starts instantly, completely bypassing browser CORS restrictions with zero backend required.
+
+**Method B: Local File Server**
+If you prefer to load files via URL instead of drag-and-drop, serve the folder through a plain static server:
 
 ```bash
 python -m http.server
 ```
 
-This is a plain local file server — it has nothing to do with ASCILINE's own backend, and playback stays 100% client-side.
+> **Infinite Playback & Low RAM:** The static player uses an aggressive rolling buffer (~3 seconds). Rendered frames are instantly garbage-collected, allowing continuous playback with no duration limit and a near-zero memory footprint.
 
-> **Best practice:** compile short clips (under 5–10 minutes). `.ascf` stores raw render instructions for the canvas, so full-length movies can produce file sizes that exceed your browser's memory limits.
+> **Time Tracking (ASC2 Format):** Files compiled with the latest Python compiler use the new `ASC2` header, which tracks total frames and displays live timestamps (e.g., `01:23 / 03:15`) in the player UI. (Older `.ascf` files remain 100% backwards compatible).
 
 ## Installation
 
@@ -202,7 +209,7 @@ python stream_server.py --cache-limit 5000   # cap the video cache at 5 GB (defa
 ```bash
 python stream_server.py --folder videos --cols 200
 python stream_server.py --folder videos --cols 230 --loop
-python stream_server.py --folder videos --mode 5 --pixel --cols 320 --vol 2
+python stream_server.py --folder videos --pixel --cols 320 --vol 2
 ```
 Videos play in filesystem order (as they appear in the folder, not alphabetically). Add/remove files to control the queue.
 
@@ -270,13 +277,19 @@ Click **FX** on the player controls (or press **F**) to open the filter overlay.
 ### Rendering modes
 
 ```bash
-python stream_server.py --mode 5 --cols 240 --rows 100
+python stream_server.py --mode 6 --cols 240 --rows 100
+
+# For pixel mode, simply pass the flag (no mode number required):
+python stream_server.py video.mp4 --pixel --cols 560
 ```
 - `1`: Black & White (DOM mode)
-- `2`: 512 colors
-- `3`: 32K colors
-- `4`: 262K colors
-- `5`: 16M colors (ultra)
+- `2`: 64 colors
+- `3`: 512 colors
+- `4`: 32K colors
+- `5`: 262K colors
+- `6`: 16M colors (ultra)
+
+*(Note: The `--pixel` flag operates independently and automatically applies the highest color fidelity, rendering `--mode` unnecessary when used).*
 
 ### Resolution & auto-scaling
 
@@ -288,7 +301,7 @@ Specify only `--cols`; ASCILINE derives `--rows` from the source aspect ratio.
 - **Hardware limits & A/V sync:** pushing `--cols` beyond what your machine can encode/send in time causes the video to fall behind the audio (desync). If you see this, lower `--cols`.
 
 ```bash
-python stream_server.py video.mp4 --mode 5 --cols 240
+python stream_server.py video.mp4 --mode 6 --cols 240
 # Terminal shows: [AUTO] 1920x1080 → grid 240x67
 ```
 
@@ -314,7 +327,7 @@ Each entry can override the global `--mode`, `--pixel`, `--vol`, and `--cols`:
 ```json
 [
     { "video": "intro.mp4",  "mode": 1, "vol": 1 },
-    { "video": "main.mp4",   "mode": 5, "pixel": true, "vol": 3, "cols": 520 },
+    { "video": "main.mp4",   "pixel": true, "vol": 3, "cols": 520 },
     { "video": "https://youtu.be/VIDEO_ID", "mode": 3, "vol": 2, "cols": 240 }
 ]
 ```
@@ -331,7 +344,6 @@ Quick fixes for the most common issues. Full protocol/technical details will liv
 - **First-run YouTube video is slow to start** — the server downloads and normalizes it to H.264/AAC first; every replay afterward is served instantly from the `videos/` cache.
 - **Disk filling up from cached downloads** — set a lower `--cache-limit` (in MB) to cap the LRU video cache.
 - **Studio (browser compiler) output is bigger than expected, or compiling takes a long time** — the browser-side encoder only emits RAW/ZLIB/DELTA (no RLE_FULL) and is meant for short clips. For long or size-sensitive videos, use the Python compiler (`static_player/compiler.py`) instead. See [Browser Studio](#browser-studio) and [Playing a compiled file](#playing-a-compiled-file) for the two preview options.
-- **Compiled `.ascf` file won't play / browser runs out of memory** — keep compiled clips under 5–10 minutes; `.ascf` stores raw render instructions, so long videos can exceed browser memory limits.
 
 ## Live Demo
 
