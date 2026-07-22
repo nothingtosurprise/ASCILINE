@@ -143,8 +143,6 @@ python -m http.server
 
 > **Infinite Playback & Low RAM:** The static player uses an aggressive rolling buffer (~3 seconds). Rendered frames are instantly garbage-collected, allowing continuous playback with no duration limit and a near-zero memory footprint.
 
-> **Time Tracking (ASC2 Format):** Files compiled with the latest Python compiler use the new `ASC2` header, which tracks total frames and displays live timestamps (e.g., `01:23 / 03:15`) in the player UI. (Older `.ascf` files remain 100% backwards compatible).
-
 ## Installation
 
 ### 0. Requirements
