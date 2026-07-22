@@ -314,14 +314,20 @@ class AscilinePlayer {
                             } else if (this.codecDecoder) {
                                 const capturedBytes = frameBytes;
                                 this.pendingDecodes++;
-                                this.decodeQueue = this.decodeQueue.then(() =>
-                                    this.codecDecoder.decode(capturedBytes).then(({ frameIndex, frame }) => {
+                                this.decodeQueue = this.decodeQueue.then(async () => {
+                                    // Yield to the event loop to prevent blocking requestAnimationFrame 
+                                    // when a large batch of synchronous DCT/ZLIB decodes arrives.
+                                    await new Promise(r => setTimeout(r, 0));
+                                    
+                                    try {
+                                        const { frameIndex, frame } = await this.codecDecoder.decode(capturedBytes);
                                         const frameTime = frameIndex / this.targetFps;
                                         if (this.bufferAll) this.allFrames.push({ data: frame, time: frameTime });
                                         this.frameBuffer.push({ data: frame, time: frameTime });
+                                    } finally {
                                         this.pendingDecodes--;
-                                    }).catch(() => { this.pendingDecodes--; })
-                                );
+                                    }
+                                });
                             }
                         } else {
                             break;
