@@ -423,7 +423,7 @@ function renderFrame(now) {
         currentFps = frameCount;
         frameCount = 0;
         lastFpsUpdate = now;
-        const modes = { 2: '512 Color', 3: '32K Color', 4: '262K Color', 5: '16M Ultra' };
+        const modes = { 2: '64 Color', 3: '512 Color', 4: '32K Color', 5: '262K Color', 6: '16M Ultra' };
         const label = (modes[renderMode] || 'B&W') + (pixelMode ? ' PIXEL' : '');
         statusEl.textContent = `FPS: ${currentFps}/${Math.round(targetFps)} | Buf: ${frameBuffer.length} | ${label}`;
     }

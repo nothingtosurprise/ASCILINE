@@ -361,7 +361,7 @@ class AscilinePlayer {
             this.currentFps = this.frameCount;
             this.frameCount = 0;
             this.lastFpsUpdate = now;
-            const modes = { 2: '512 Color', 3: '32K Color', 4: '262K Color', 5: '16M Ultra' };
+            const modes = { 2: '64 Color', 3: '512 Color', 4: '32K Color', 5: '262K Color', 6: '16M Ultra' };
             const label = (modes[this.renderMode] || 'B&W') + (this.pixelMode ? ' PIXEL' : '');
             if (this.statusEl) {
                 this.statusEl.textContent = `FPS: ${this.currentFps}/${Math.round(this.targetFps)} | Buf: ${this.frameBuffer.length} | ${label}`;

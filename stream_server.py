@@ -654,7 +654,7 @@ async def websocket_endpoint(websocket: WebSocket):
             sharpness_kernel  = None
             filter_palette    = "default"
             gray_lut          = None  # None = identity (skip cv2.LUT call)
-            qb           = {5: 0, 4: 2, 3: 3, 2: 5}.get(render_mode, 0)
+            qb           = {6: 0, 5: 2, 4: 3, 3: 5, 2: 6}.get(render_mode, 0)
 
             # ── FPS DECIMATION ──
             # If source > 30 FPS, skip every Nth frame using grab() (no decode).
@@ -1027,9 +1027,9 @@ HELP_TEXT = "\033[1;37m" + """
 ║  \033[32m--folder\033[1;37m       Play all videos in a folder      ║
 ║                                                   ║
 ║  \033[33m─── Render ───\033[1;37m                                  ║
-║  \033[32m--mode\033[1;37m  \033[35m1-5\033[1;37m    Color quality                    ║
-║     1=B&W  2=512c  3=32Kc  4=262Kc  5=16M        ║
-║  \033[32m--pixel\033[1;37m        Pixel block mode (with mode 2-5) ║
+║  \033[32m--mode\033[1;37m  \033[35m1-6\033[1;37m    Color quality                    ║
+║     1=B&W  2=64c  3=512c  4=32Kc  5=262Kc  6=16M  ║
+║  \033[32m--pixel\033[1;37m        Pixel block mode                 ║
 ║  \033[32m--cols\033[1;37m  \033[35mN\033[1;37m      Grid columns  (default: 200)     ║
 ║  \033[32m--rows\033[1;37m  \033[35mN\033[1;37m      Grid rows     (default: auto)    ║
 ║                                                   ║
@@ -1135,13 +1135,13 @@ if __name__ == "__main__":
     render = parser.add_argument_group('\033[33mRender\033[0m')
     render.add_argument(
         "--mode",
-        type=int, choices=[1, 2, 3, 4, 5], default=1,
-        help="Color quality: 1=B&W  2=512c  3=32Kc  4=262Kc  5=16M Ultra"
+        type=int, choices=[1, 2, 3, 4, 5, 6], default=1,
+        help="Color quality: 1=B&W  2=64c  3=512c  4=32Kc  5=262Kc  6=16M Ultra"
     )
     render.add_argument(
         "--pixel",
         action="store_true", default=False,
-        help="Pixel mode: replaces ASCII characters with colored blocks (combine with --mode 2-5)"
+        help="Pixel mode: replaces ASCII characters with colored blocks"
     )
     render.add_argument("--cols", type=int, default=None, help="Grid columns (default: 200 for text, 450 for pixel)")
     render.add_argument("--rows", type=int, default=0,   help="Grid rows    (default: auto from video aspect ratio)")
@@ -1177,10 +1177,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Validate: --pixel requires color mode (2-5)
+    # Automatically switch to a color mode if pixel mode is requested,
+    # because the client requires mode > 1 to initialize the Canvas/Binary decoder.
     if args.pixel and args.mode == 1:
-        print("[ERROR] --pixel requires a color mode (--mode 2-5). B&W mode is text-only.")
-        exit(1)
+        args.mode = 6
 
     # Validate: --pixel does not support adaptive codec quality flags
     if args.pixel and args.quality != "lossless":
